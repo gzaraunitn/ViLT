@@ -1,13 +1,11 @@
-import gradio as gr
 import torch
 import copy
-import time
 import requests
 import io
 import numpy as np
 import re
 
-import ipdb
+from argparse import ArgumentParser
 
 from PIL import Image
 
@@ -22,6 +20,12 @@ from vilt.datamodules.datamodule_base import get_pretrained_tokenizer
 @ex.automain
 def main(_config):
     _config = copy.deepcopy(_config)
+
+    # parser = ArgumentParser()
+    # parser.add_argument("--url", type=str, required=True)
+    # parser.add_argument("--caption", type=str, required=True)
+    # parser.add_argument("--token", type=int, default=0)
+    # args = parser.parse_args()
 
     loss_names = {
         "itm": 0,
@@ -48,14 +52,19 @@ def main(_config):
     device = "cuda:0" if _config["num_gpus"] > 0 else "cpu"
     model.to(device)
 
-    def infer(url, mp_text, hidx):
-        try:
-            res = requests.get(url)
-            image = Image.open(io.BytesIO(res.content)).convert("RGB")
-            img = pixelbert_transform(size=384)(image)
-            img = img.unsqueeze(0).to(device)
-        except:
-            return False
+    def infer(path, mp_text, hidx, url=False):
+
+        if url:
+            try:
+                res = requests.get(path)
+                image = Image.open(io.BytesIO(res.content)).convert("RGB")
+            except:
+                return False
+        else:
+            image = Image.open(path).convert("RGB")
+
+        img = pixelbert_transform(size=384)(image)
+        img = img.unsqueeze(0).to(device)
 
         batch = {"text": [""], "image": [None]}
         tl = len(re.findall("\[MASK\]", mp_text))
@@ -151,83 +160,12 @@ def main(_config):
 
         return [np.array(image), inferred_token[0], selected_token]
 
-    inputs = [
-        gr.inputs.Textbox(
-            label="Url of an image.",
-            lines=5,
-        ),
-        gr.inputs.Textbox(label="Caption with [MASK] tokens to be filled.", lines=5),
-        gr.inputs.Slider(
-            minimum=0,
-            maximum=38,
-            step=1,
-            label="Index of token for heatmap visualization (ignored if zero)",
-        ),
-    ]
-    outputs = [
-        gr.outputs.Image(label="Image"),
-        gr.outputs.Textbox(label="description"),
-        gr.outputs.Textbox(label="selected token"),
-    ]
-
-    interface = gr.Interface(
-        fn=infer,
-        inputs=inputs,
-        outputs=outputs,
-        server_name="0.0.0.0",
-        server_port=8888,
-        examples=[
-            [
-                "https://s3.geograph.org.uk/geophotos/06/21/24/6212487_1cca7f3f_1024x1024.jpg",
-                "a display of flowers growing out and over the [MASK] [MASK] in front of [MASK] on a [MASK] [MASK].",
-                0,
-            ],
-            [
-                "https://s3.geograph.org.uk/geophotos/06/21/24/6212487_1cca7f3f_1024x1024.jpg",
-                "a display of flowers growing out and over the retaining wall in front of cottages on a cloudy day.",
-                4,
-            ],
-            [
-                "https://s3.geograph.org.uk/geophotos/06/21/24/6212487_1cca7f3f_1024x1024.jpg",
-                "a display of flowers growing out and over the retaining wall in front of cottages on a cloudy day.",
-                11,
-            ],
-            [
-                "https://s3.geograph.org.uk/geophotos/06/21/24/6212487_1cca7f3f_1024x1024.jpg",
-                "a display of flowers growing out and over the retaining wall in front of cottages on a cloudy day.",
-                15,
-            ],
-            [
-                "https://s3.geograph.org.uk/geophotos/06/21/24/6212487_1cca7f3f_1024x1024.jpg",
-                "a display of flowers growing out and over the retaining wall in front of cottages on a cloudy day.",
-                18,
-            ],
-            [
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Living_Room.jpg/800px-Living_Room.jpg",
-                "a room with a [MASK], a [MASK], a [MASK], and a [MASK].",
-                0,
-            ],
-            [
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Living_Room.jpg/800px-Living_Room.jpg",
-                "a room with a rug, a chair, a painting, and a plant.",
-                5,
-            ],
-            [
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Living_Room.jpg/800px-Living_Room.jpg",
-                "a room with a rug, a chair, a painting, and a plant.",
-                8,
-            ],
-            [
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Living_Room.jpg/800px-Living_Room.jpg",
-                "a room with a rug, a chair, a painting, and a plant.",
-                11,
-            ],
-            [
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Living_Room.jpg/800px-Living_Room.jpg",
-                "a room with a rug, a chair, a painting, and a plant.",
-                15,
-            ],
-        ],
+    # print(infer(args.url, args.caption, args.token))
+    res = infer(
+        _config["path"],
+        _config["caption"],
+        _config["token"],
+        _config["is_url"]
     )
 
-    interface.launch(debug=True)
+    print(res[1])
